@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { JSDOM } from 'jsdom';
+import { load } from 'cheerio';
 import { createMockResult } from './mock';
 
 // Check if we're in development mode
@@ -70,12 +71,13 @@ export async function GET(request: NextRequest) {
     // Get response headers
     const headers = Object.fromEntries(response.headers.entries());
     
-    // Parse the HTML using JSDOM
+    // Parse the HTML using both JSDOM and Cheerio for better compatibility
     const dom = new JSDOM(html);
     const doc = dom.window.document;
+    const $ = load(html);
     
     // Check for various elements
-    const result = analyzeWebsite(url, html, doc, headers, response.status);
+    const result = analyzeWebsite(url, html, doc, $, headers, response.status);
     
     return NextResponse.json(result);
   } catch (error) {
@@ -87,24 +89,50 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Function to resolve relative URLs to absolute URLs
+function resolveUrl(baseUrl: string, relativeUrl: string): string {
+  if (!relativeUrl) return '';
+  
+  // If already absolute URL, return as is
+  if (relativeUrl.startsWith('http://') || relativeUrl.startsWith('https://')) {
+    return relativeUrl;
+  }
+  
+  // If protocol-relative URL
+  if (relativeUrl.startsWith('//')) {
+    const protocol = baseUrl.startsWith('https://') ? 'https:' : 'http:';
+    return protocol + relativeUrl;
+  }
+  
+  // Create URL object to resolve relative paths
+  try {
+    return new URL(relativeUrl, baseUrl).href;
+  } catch (error) {
+    // Fallback for malformed URLs
+    const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    const relative = relativeUrl.startsWith('/') ? relativeUrl : '/' + relativeUrl;
+    return base + relative;
+  }
+}
+
 // Function to analyze the website
-function analyzeWebsite(url: string, html: string, doc: Document, headers: Record<string, string>, statusCode: number): AnalysisResult {
+function analyzeWebsite(url: string, html: string, doc: Document, $: cheerio.Root, headers: Record<string, string>, statusCode: number): AnalysisResult {
   // Initialize categories and items
   const categories: AnalysisCategory[] = [
     {
       name: 'Metadata',
       score: 0,
-      items: checkMetadata(doc),
+      items: checkMetadata(doc, $, url),
     },
     {
       name: 'Favicon',
       score: 0,
-      items: checkFavicon(doc),
+      items: checkFavicon(doc, $, url),
     },
     {
       name: 'Social Media',
       score: 0,
-      items: checkSocialMedia(doc),
+      items: checkSocialMedia(doc, $, url),
     },
     {
       name: 'SEO Files',
@@ -119,7 +147,7 @@ function analyzeWebsite(url: string, html: string, doc: Document, headers: Recor
     {
       name: 'AI Integration',
       score: 0,
-      items: checkAIIntegration(doc, url),
+      items: checkAIIntegration(doc, $, url),
     },
     {
       name: 'Security',
@@ -159,11 +187,11 @@ function analyzeWebsite(url: string, html: string, doc: Document, headers: Recor
 }
 
 // Check metadata
-function checkMetadata(doc: Document): AnalysisItem[] {
+function checkMetadata(doc: Document, $: cheerio.Root, baseUrl: string): AnalysisItem[] {
   const items: AnalysisItem[] = [];
 
-  // Check for title
-  const title = doc.querySelector('title')?.textContent;
+  // Check for title - use cheerio for better text extraction
+  const title = $('title').text().trim();
   items.push({
     name: 'Title',
     status: title ? (title.length > 10 && title.length < 70 ? 'success' : 'warning') : 'error',
@@ -175,8 +203,8 @@ function checkMetadata(doc: Document): AnalysisItem[] {
     preview: title || undefined,
   });
 
-  // Check for meta description
-  const description = doc.querySelector('meta[name="description"]')?.getAttribute('content');
+  // Check for meta description - use cheerio for better attribute extraction
+  const description = $('meta[name="description"]').attr('content')?.trim();
   items.push({
     name: 'Meta Description',
     status: description ? (description.length > 50 && description.length < 160 ? 'success' : 'warning') : 'error',
@@ -189,7 +217,7 @@ function checkMetadata(doc: Document): AnalysisItem[] {
   });
 
   // Check for meta keywords
-  const keywords = doc.querySelector('meta[name="keywords"]')?.getAttribute('content');
+  const keywords = $('meta[name="keywords"]').attr('content')?.trim();
   items.push({
     name: 'Meta Keywords',
     status: keywords ? 'success' : 'warning',
@@ -200,18 +228,18 @@ function checkMetadata(doc: Document): AnalysisItem[] {
   });
 
   // Check for canonical URL
-  const canonical = doc.querySelector('link[rel="canonical"]')?.getAttribute('href');
+  const canonical = $('link[rel="canonical"]').attr('href')?.trim();
   items.push({
     name: 'Canonical URL',
     status: canonical ? 'success' : 'warning',
     message: canonical 
       ? `Canonical URL present: ${canonical}`
       : 'Canonical URL not present (recommended to prevent duplicate content issues)',
-    preview: canonical || undefined,
+    preview: canonical ? resolveUrl(baseUrl, canonical) : undefined,
   });
 
   // Check for viewport
-  const viewport = doc.querySelector('meta[name="viewport"]')?.getAttribute('content');
+  const viewport = $('meta[name="viewport"]').attr('content')?.trim();
   items.push({
     name: 'Viewport',
     status: viewport ? 'success' : 'error',
@@ -222,7 +250,7 @@ function checkMetadata(doc: Document): AnalysisItem[] {
   });
 
   // Check for charset
-  const charset = doc.querySelector('meta[charset]')?.getAttribute('charset');
+  const charset = $('meta[charset]').attr('charset')?.trim();
   items.push({
     name: 'Character Set',
     status: charset ? 'success' : 'error',
@@ -233,7 +261,7 @@ function checkMetadata(doc: Document): AnalysisItem[] {
   });
 
   // Check for language
-  const language = doc.querySelector('html')?.getAttribute('lang');
+  const language = $('html').attr('lang')?.trim();
   items.push({
     name: 'Language',
     status: language ? 'success' : 'warning',
@@ -247,51 +275,54 @@ function checkMetadata(doc: Document): AnalysisItem[] {
 }
 
 // Check favicon
-function checkFavicon(doc: Document): AnalysisItem[] {
+function checkFavicon(doc: Document, $: cheerio.Root, baseUrl: string): AnalysisItem[] {
   const items: AnalysisItem[] = [];
 
   // Check for traditional favicon
-  const favicon = doc.querySelector('link[rel="icon"], link[rel="shortcut icon"]');
+  const faviconHref = $('link[rel="icon"], link[rel="shortcut icon"]').first().attr('href')?.trim();
+  const faviconUrl = faviconHref ? resolveUrl(baseUrl, faviconHref) : undefined;
   items.push({
     name: 'Standard Favicon',
-    status: favicon ? 'success' : 'error',
-    message: favicon 
-      ? `Standard favicon present: ${favicon.getAttribute('href')}`
+    status: faviconHref ? 'success' : 'error',
+    message: faviconHref 
+      ? `Standard favicon present: ${faviconHref}`
       : 'Standard favicon is missing',
-    preview: favicon ? favicon.getAttribute('href') || undefined : undefined,
+    preview: faviconUrl,
   });
 
   // Check for Apple Touch Icon
-  const appleTouchIcon = doc.querySelector('link[rel="apple-touch-icon"]');
+  const appleTouchIconHref = $('link[rel="apple-touch-icon"]').first().attr('href')?.trim();
+  const appleTouchIconUrl = appleTouchIconHref ? resolveUrl(baseUrl, appleTouchIconHref) : undefined;
   items.push({
     name: 'Apple Touch Icon',
-    status: appleTouchIcon ? 'success' : 'warning',
-    message: appleTouchIcon 
-      ? `Apple Touch Icon present: ${appleTouchIcon.getAttribute('href')}`
+    status: appleTouchIconHref ? 'success' : 'warning',
+    message: appleTouchIconHref 
+      ? `Apple Touch Icon present: ${appleTouchIconHref}`
       : 'Apple Touch Icon is missing (recommended for iOS devices)',
-    preview: appleTouchIcon ? appleTouchIcon.getAttribute('href') || undefined : undefined,
+    preview: appleTouchIconUrl,
   });
 
   // Check for Web App Manifest
-  const manifest = doc.querySelector('link[rel="manifest"]');
+  const manifestHref = $('link[rel="manifest"]').first().attr('href')?.trim();
+  const manifestUrl = manifestHref ? resolveUrl(baseUrl, manifestHref) : undefined;
   items.push({
     name: 'Web App Manifest',
-    status: manifest ? 'success' : 'warning',
-    message: manifest 
-      ? `Web App Manifest present: ${manifest.getAttribute('href')}`
+    status: manifestHref ? 'success' : 'warning',
+    message: manifestHref 
+      ? `Web App Manifest present: ${manifestHref}`
       : 'Web App Manifest is missing (recommended for PWA support)',
-    preview: manifest ? manifest.getAttribute('href') || undefined : undefined,
+    preview: manifestUrl,
   });
 
   return items;
 }
 
 // Check social media tags
-function checkSocialMedia(doc: Document): AnalysisItem[] {
+function checkSocialMedia(doc: Document, $: cheerio.Root, baseUrl: string): AnalysisItem[] {
   const items: AnalysisItem[] = [];
 
   // Check for Open Graph title
-  const ogTitle = doc.querySelector('meta[property="og:title"]')?.getAttribute('content');
+  const ogTitle = $('meta[property="og:title"]').attr('content')?.trim();
   items.push({
     name: 'OG Title',
     status: ogTitle ? 'success' : 'warning',
@@ -302,7 +333,7 @@ function checkSocialMedia(doc: Document): AnalysisItem[] {
   });
 
   // Check for Open Graph description
-  const ogDescription = doc.querySelector('meta[property="og:description"]')?.getAttribute('content');
+  const ogDescription = $('meta[property="og:description"]').attr('content')?.trim();
   items.push({
     name: 'OG Description',
     status: ogDescription ? 'success' : 'warning',
@@ -313,18 +344,19 @@ function checkSocialMedia(doc: Document): AnalysisItem[] {
   });
 
   // Check for Open Graph image
-  const ogImage = doc.querySelector('meta[property="og:image"]')?.getAttribute('content');
+  const ogImageHref = $('meta[property="og:image"]').attr('content')?.trim();
+  const ogImageUrl = ogImageHref ? resolveUrl(baseUrl, ogImageHref) : undefined;
   items.push({
     name: 'OG Image',
-    status: ogImage ? 'success' : 'warning',
-    message: ogImage 
-      ? `Open Graph image present: ${ogImage}`
+    status: ogImageHref ? 'success' : 'warning',
+    message: ogImageHref 
+      ? `Open Graph image present: ${ogImageHref}`
       : 'Open Graph image is missing (recommended for social media sharing)',
-    preview: ogImage || undefined,
+    preview: ogImageUrl,
   });
 
   // Check for Open Graph URL
-  const ogUrl = doc.querySelector('meta[property="og:url"]')?.getAttribute('content');
+  const ogUrl = $('meta[property="og:url"]').attr('content')?.trim();
   items.push({
     name: 'OG URL',
     status: ogUrl ? 'success' : 'warning',
@@ -335,7 +367,7 @@ function checkSocialMedia(doc: Document): AnalysisItem[] {
   });
 
   // Check for Twitter Card
-  const twitterCard = doc.querySelector('meta[name="twitter:card"]')?.getAttribute('content');
+  const twitterCard = $('meta[name="twitter:card"]').attr('content')?.trim();
   items.push({
     name: 'Twitter Card',
     status: twitterCard ? 'success' : 'warning',
@@ -346,14 +378,15 @@ function checkSocialMedia(doc: Document): AnalysisItem[] {
   });
 
   // Check for Twitter Image
-  const twitterImage = doc.querySelector('meta[name="twitter:image"]')?.getAttribute('content');
+  const twitterImageHref = $('meta[name="twitter:image"]').attr('content')?.trim();
+  const twitterImageUrl = twitterImageHref ? resolveUrl(baseUrl, twitterImageHref) : undefined;
   items.push({
     name: 'Twitter Image',
-    status: twitterImage ? 'success' : 'warning',
-    message: twitterImage 
+    status: twitterImageHref ? 'success' : 'warning',
+    message: twitterImageHref 
       ? `Twitter Image present`
       : 'Twitter Image is missing (recommended for Twitter sharing)',
-    preview: twitterImage || undefined,
+    preview: twitterImageUrl,
   });
 
   return items;
@@ -456,7 +489,7 @@ function checkPerformance(html: string, headers: Record<string, string>): Analys
 }
 
 // Check AI integration
-function checkAIIntegration(doc: Document, url: string): AnalysisItem[] {
+function checkAIIntegration(doc: Document, $: cheerio.Root, url: string): AnalysisItem[] {
   const items: AnalysisItem[] = [];
 
   // Check for llm.txt (Note: In a real implementation, we would make an HTTP request to check)
@@ -466,14 +499,22 @@ function checkAIIntegration(doc: Document, url: string): AnalysisItem[] {
     message: 'Could not verify llm.txt file (server-side check required)',
   });
 
-  // Check for AI-related meta tags
-  const aiMetaTags = Array.from(doc.querySelectorAll('meta'))
-    .filter(meta => 
-      meta.getAttribute('name')?.includes('ai') || 
-      meta.getAttribute('property')?.includes('ai') ||
-      meta.getAttribute('name')?.includes('bot') ||
-      meta.getAttribute('property')?.includes('bot')
-    );
+  // Check for AI-related meta tags using cheerio for better searching
+  const aiMetaTags: string[] = [];
+  $('meta').each((_, element) => {
+    const $el = $(element);
+    const name = $el.attr('name') || $el.attr('property');
+    const content = $el.attr('content');
+    
+    if (name && content && (
+      name.toLowerCase().includes('ai') || 
+      name.toLowerCase().includes('bot') ||
+      name.toLowerCase().includes('robot') ||
+      name.toLowerCase().includes('llm')
+    )) {
+      aiMetaTags.push(`${name}: ${content}`);
+    }
+  });
 
   items.push({
     name: 'AI Meta Tags',
@@ -481,22 +522,27 @@ function checkAIIntegration(doc: Document, url: string): AnalysisItem[] {
     message: aiMetaTags.length > 0
       ? `Found ${aiMetaTags.length} AI-related meta tags`
       : 'No AI-related meta tags found (optional but becoming more common)',
-    preview: aiMetaTags.length > 0 
-      ? aiMetaTags.map(tag => `${tag.getAttribute('name') || tag.getAttribute('property')}: ${tag.getAttribute('content')}`).join('\n')
-      : undefined,
+    preview: aiMetaTags.length > 0 ? aiMetaTags.join('\n') : undefined,
   });
 
   // Check for structured data (simplified check)
-  const structuredData = doc.querySelectorAll('script[type="application/ld+json"]');
-  const structuredDataContent = structuredData.length > 0 
-    ? Array.from(structuredData)[0].textContent 
+  const structuredDataBlocks: string[] = [];
+  $('script[type="application/ld+json"]').each((_, element) => {
+    const content = $(element).html()?.trim();
+    if (content) {
+      structuredDataBlocks.push(content);
+    }
+  });
+
+  const structuredDataContent = structuredDataBlocks.length > 0 
+    ? structuredDataBlocks[0].substring(0, 200) + (structuredDataBlocks[0].length > 200 ? '...' : '')
     : null;
 
   items.push({
     name: 'Structured Data',
-    status: structuredData.length > 0 ? 'success' : 'warning',
-    message: structuredData.length > 0
-      ? `Found ${structuredData.length} structured data blocks`
+    status: structuredDataBlocks.length > 0 ? 'success' : 'warning',
+    message: structuredDataBlocks.length > 0
+      ? `Found ${structuredDataBlocks.length} structured data blocks`
       : 'No structured data found (recommended for better SEO and AI understanding)',
     preview: structuredDataContent || undefined,
   });
@@ -563,4 +609,4 @@ function checkSecurity(headers: Record<string, string>): AnalysisItem[] {
   });
 
   return items;
-} 
+}
