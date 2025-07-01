@@ -67,7 +67,7 @@ export default function Home() {
       <footer className="relative border-t border-foreground-tertiary/20 py-8">
         <div className="absolute inset-0 bg-gradient-to-r from-background-secondary/50 to-background-tertiary/50"></div>
         <div className="container mx-auto px-4 md:px-6 text-center text-sm text-foreground-tertiary relative">
-          <p>© {new Date().getFullYear()} WebSiteAnalyzer. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} Inspectr. All rights reserved.</p>
         </div>
       </footer>
     </div>

@@ -10,7 +10,7 @@ export default function Header() {
               </svg>
             </div>
             <h1 className="text-2xl font-bold gradient-text">
-              WebSiteAnalyzer
+              Inspectr
             </h1>
           </div>
           <div className="hidden sm:flex items-center gap-6 text-sm text-foreground-secondary">
