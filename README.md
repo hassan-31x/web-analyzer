@@ -1,36 +1,127 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Inspectr - Website Analyzer
+
+Inspectr is a modern, open-source website analyzer that helps you ensure your website is production-ready. It checks for SEO essentials, performance optimizations, metadata, and more, providing a comprehensive report in seconds.
+
+## Features
+- **SEO Analysis**: Checks for meta tags, keywords, canonical URLs, and more.
+- **Performance Insights**: Analyzes HTML size, caching headers, and compression.
+- **Social Media Readiness**: Validates Open Graph and Twitter metadata.
+- **Security Checks**: Ensures HTTPS, Content Security Policy, and other headers are in place.
+- **AI Integration**: Detects AI-related meta tags and structured data.
+- **Responsive Design**: Verifies viewport and language settings.
+
+## Tech Stack
+- **Frontend**: [Next.js](https://nextjs.org), React, Tailwind CSS
+- **Backend**: Node.js, Next.js API Routes
+- **Parsing**: [Cheerio](https://cheerio.js.org) for HTML parsing, [JSDOM](https://github.com/jsdom/jsdom) for DOM manipulation
+- **Styling**: Tailwind CSS with custom gradients and glass morphism
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+- Node.js (v16 or later)
+- npm, yarn, or pnpm
 
+### Installation
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-username/inspectr.git
+   cd inspectr
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   # or
+   yarn install
+   # or
+   pnpm install
+   ```
+
+### Running Locally
+Start the development server:
 ```bash
 npm run dev
 # or
 yarn dev
 # or
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser to view the app.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Building for Production
+To build the app for production:
+```bash
+npm run build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+To start the production server:
+```bash
+npm start
+```
 
-## Learn More
+## How It Works
 
-To learn more about Next.js, take a look at the following resources:
+### Overview
+Inspectr analyzes websites by fetching their HTML and running various checks using both server-side and client-side tools. The results are displayed in a modern, user-friendly interface.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Key Components
+1. **API Route** (`/api/analyze`):
+   - Fetches the website's HTML using `fetch`.
+   - Parses the HTML using `Cheerio` and `JSDOM`.
+   - Runs checks for metadata, performance, security, and more.
+   - Returns a structured JSON response with analysis results.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+2. **Frontend**:
+   - **Hero Section**: Highlights the app's purpose and features.
+   - **URL Form**: Allows users to input a website URL for analysis.
+   - **Results Page**: Displays a detailed report with collapsible sections for each category.
 
-## Deploy on Vercel
+3. **Styling**:
+   - Tailwind CSS is used for responsive design and modern UI elements.
+   - Custom gradients and glass morphism effects enhance the visual appeal.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Example Snippet
+#### API Route (`/api/analyze`)
+```typescript
+export async function GET(request: NextRequest) {
+  const url = request.nextUrl.searchParams.get('url');
+  if (!url) {
+    return NextResponse.json({ error: 'URL parameter is required' }, { status: 400 });
+  }
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+  try {
+    const response = await fetch(url);
+    const html = await response.text();
+    const $ = cheerio.load(html);
+
+    const title = $('title').text();
+    return NextResponse.json({ title });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+```
+
+#### Frontend (`page.tsx`)
+```tsx
+<section className="relative px-4 md:px-6 py-20 md:py-32 overflow-hidden">
+  <div className="absolute inset-0 overflow-hidden">
+    <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full bg-gradient-to-br from-primary/20 to-secondary/20 blur-3xl animate-float"></div>
+  </div>
+  <div className="container mx-auto relative">
+    <h1 className="text-4xl md:text-6xl font-bold">Ensure Your Website is Ready for Production</h1>
+  </div>
+</section>
+```
+
+## Contributing
+Contributions are welcome! Please fork the repository and submit a pull request.
+
+## License
+This project is licensed under the MIT License. See the `LICENSE` file for details.
+
+## Acknowledgments
+- [Next.js](https://nextjs.org)
+- [Cheerio](https://cheerio.js.org)
+- [Tailwind CSS](https://tailwindcss.com)
